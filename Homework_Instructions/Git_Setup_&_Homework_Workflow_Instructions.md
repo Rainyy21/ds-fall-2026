@@ -71,7 +71,7 @@ In the terminal, run `git status` to confirm you're on `week{x}`. If you're not,
 
 ## 4. Copy the exercise and rename it
 
-**Don't edit the exercise file directly.** Copy it into `homeworks/`, rename it with a unique identifier (not just initials), such as `faizan_khan_Week_3_HW.ipynb` or `student_12345678_week_03_exercise.ipynb`, and work on the copy. Bare initials are not accepted.
+**Don't edit the exercise file directly.** Copy it into `exercise/`, rename it with a unique identifier (not just initials), such as `faizan_khan_Week_3_HW.ipynb` or `student_12345678_week_03_exercise.ipynb`, and work on the copy. Bare initials are not accepted.
 
 ![Copy](../readme_images/copy.png)
 
@@ -85,7 +85,7 @@ Stage **only your file** — NOT `git add .` That is the single biggest avoidabl
 
 ```bash
 git status
-git add homeworks/HM_Week_1_HW.ipynb
+git add exercise/HM_Week_1_HW.ipynb
 git commit -m "completed week 1 hw"
 git push
 ```
@@ -138,7 +138,7 @@ After you open a PR, our **github-actions[bot]** reviews it automatically.
 It checks that:
 
 1. Your branch has **no merge conflict** with `main` (sync your fork first if you're behind).
-2. The PR contains **exactly one homework notebook**, named correctly, inside `homeworks/`.
+2. The PR contains **exactly one homework notebook**, named correctly, inside `exercise/`.
 3. You **didn't touch other files** (including the `DONT_EDIT_MAKE_COPY` template).
 4. The notebook is actually **filled in**, not an empty copy.
 
@@ -148,8 +148,8 @@ If something fails, the bot leaves a **Request changes** review explaining what 
 
 Accepted filenames look like:
 
-- `homeworks/HM_Week_1_HW.ipynb`
-- `homeworks/HM_week_03_exercise.ipynb`
+- `exercise/HM_Week_1_HW.ipynb`
+- `exercise/HM_week_03_exercise.ipynb`
 
 `git add .` is how people accidentally include extra files and fail the bot. Add only your homework file.
 
