@@ -11,7 +11,7 @@
 #
 # FOLDER LAYOUT this expects, per week:
 #   Week-{NN}-{Topic}/
-#     Exercise_DONT_EDIT_MAKE_COPY_{anything}.ipynb   <- template, lives at the week's
+#     Exercise-DONT-EDIT-MAKE-COPY{anything}.ipynb    <- template, lives at the week's
 #                                                root (NOT inside exercise/),
 #                                                so it's a one-click grab.
 #                                                {Topic} and the rest of the
@@ -32,8 +32,9 @@
 #     (Firstname_Lastname) or an identifier that includes a digit (student ID,
 #     etc). Case-insensitive, tolerates a trailing "_copy"/" copy" (Jupyter's
 #     duplicate-file artifact), tolerates "Week1" as well as "Week_1".
-#   - Template: filename must start with Exercise_DONT_EDIT_MAKE_COPY_ (case-
-#     insensitive) and lives directly in the week's own folder, not inside
+#   - Template: filename must start with Exercise-DONT-EDIT-MAKE-COPY, case-
+#     insensitive and separator-agnostic (-, _, a space, or nothing between the
+#     words all match), and lives directly in the week's own folder, not inside
 #     exercise/. Everything after the prefix is free -- name it whatever fits
 #     the week's topic.
 #   - The week number embedded in a submission's filename must match the week
@@ -131,7 +132,24 @@ jobs:
             const WEEK_FOLDER_RE = /^Week-(\d+)-[^/]+\/exercise\/[^/]+$/i;
             // Case-insensitive, deliberately not anchored to a fixed suffix --
             // whatever comes after this prefix is the instructor's call.
-            const TEMPLATE_PREFIX = 'Exercise_DONT_EDIT_MAKE_COPY';
+            //
+            // Separator-agnostic on purpose. The repo shipped the Week 1
+            // template as "Exercise-DONT-EDIT-MAKE-COPY.ipynb" (hyphens) while
+            // this bot originally hard-coded the underscore spelling. Result:
+            // findTemplate() matched nothing, every content check fell through
+            // to 'template-missing', and NOTHING could ever merge -- a
+            // perfectly correct submission got flagged 'question' instead of
+            // merged (PRs #1 and #4 were exactly that). Rather than rename a
+            // file the instructions doc, the week README and every existing
+            // student fork already point at, accept -, _, a space, or nothing
+            // between the words.
+            const TEMPLATE_PREFIX_RE = /^Exercise[-_ ]?DONT[-_ ]?EDIT[-_ ]?MAKE[-_ ]?COPY/i;
+            // Human-readable form, used only in messages to students.
+            const TEMPLATE_PREFIX = 'Exercise-DONT-EDIT-MAKE-COPY';
+
+            function isTemplateName(basename) {
+              return TEMPLATE_PREFIX_RE.test(basename);
+            }
             const MERGE_METHOD = 'squash'; // 'merge' | 'squash' | 'rebase'
             // How long a flagged PR can sit with no new commits before it's
             // closed outright. Measured from the last commit's own timestamp,
@@ -155,11 +173,23 @@ jobs:
             // message for the whole PR -- "please remove those changes" is
             // wrong advice for someone whose real submission just landed in the
             // wrong spot, they need to move it, not delete it.
-            function explainInvalidFile(filename) {
+            function explainInvalidFile(filename, ctx = {}) {
               const reason = classifyFile(filename);
               const basename = filename.split('/').pop();
               if (reason === 'template') {
                 return `\`${filename}\` is the template itself, don't edit it, make your own copy inside that week's \`exercise/\` folder instead`;
+              }
+              // A PR that already carries exactly one good submission plus a
+              // file we don't recognize is almost always a leftover copy from
+              // before the student renamed or moved things. Telling them to fix
+              // that file's name or location is the wrong advice -- they'd end
+              // up with two submissions. It just needs to go.
+              if (ctx.keeper && (reason === 'bad-name' || reason === 'wrong-location')) {
+                return (
+                  `\`${filename}\` looks like a leftover copy -- \`${ctx.keeper}\` on this same PR is already a valid ` +
+                  `submission, so **delete this extra file** rather than renaming or moving it ` +
+                  `(\`git rm "${filename}"\`, then commit and push). One file per PR`
+                );
               }
               if (reason === 'wrong-location') {
                 return `\`${filename}\` needs to be inside that week's \`exercise/\` folder, it isn't right now`;
@@ -174,9 +204,13 @@ jobs:
               // reference notebook, a scratch file), so the wording stays
               // neutral rather than assuming they were attempting the pattern
               // and just got it wrong.
+              // Use the week number from the file's own path when we can work
+              // it out, so a Week 1 student isn't shown a week_05 example and
+              // left wondering whether the 05 is part of the required format.
+              const wk = (filename.match(/^Week-(\d+)-/i) || [])[1] || '05';
               return (
                 `\`${filename}\` isn't recognized as a homework submission ` +
-                `(expected something like \`firstname_lastname_week_05_exercise.ipynb\` inside that week's \`exercise/\` folder)`
+                `(expected something like \`firstname_lastname_week_${wk}_exercise.ipynb\` inside that week's \`exercise/\` folder)`
               );
             }
 
@@ -197,7 +231,14 @@ jobs:
                     `one per week -- keeps your git history clean and each week gets reviewed on its own.`
                   : `This PR includes more than one homework file for the same week (${names.join(', ')}). Keep only your own submission.`,
               ],
-              invalid: (names) => names.map((n) => `This PR changes ${explainInvalidFile(n)}.`),
+              // `keeper` is the PR's single valid submission, when it has
+              // exactly one -- it turns "this file isn't recognized" into
+              // "delete this leftover copy, you already submitted".
+              // No "This PR changes ..." wrapper: explainInvalidFile() already
+              // returns a complete sentence starting with the filename, and
+              // gluing the two together produced live comments reading "This PR
+              // changes `x.ipynb` isn't recognized as a homework submission."
+              invalid: ({ names, keeper }) => names.map((n) => `${explainInvalidFile(n, { keeper })}.`),
               question: (subReason) => [
                 subReason === 'template-missing'
                   ? "Couldn't find a template to check this against, which leaves me a little lost -- I've got nothing to compare you to. " +
@@ -240,9 +281,7 @@ jobs:
               try {
                 const res = await github.rest.repos.getContent({ owner, repo, path: weekFolder, ref: baseRef });
                 if (!Array.isArray(res.data)) return null;
-                const templateEntry = res.data.find(
-                  (entry) => entry.type === 'file' && entry.name.toLowerCase().startsWith(TEMPLATE_PREFIX.toLowerCase())
-                );
+                const templateEntry = res.data.find((entry) => entry.type === 'file' && isTemplateName(entry.name));
                 if (!templateEntry) return null;
                 return await getNotebookSource(templateEntry.path, baseRef);
               } catch {
@@ -259,7 +298,7 @@ jobs:
             // specific troubleshooting message above.
             function classifyFile(filename) {
               const basename = filename.split('/').pop();
-              if (basename.toLowerCase().startsWith(TEMPLATE_PREFIX.toLowerCase())) return 'template';
+              if (isTemplateName(basename)) return 'template';
 
               // Name shape is checked BEFORE location on purpose, same reasoning
               // as the summer bot: "wrong-location" should only ever fire for a
@@ -434,7 +473,14 @@ jobs:
                 if (pr.mergeable === false) applicable.push('bug');
                 if (nonMatching.length) {
                   applicable.push('invalid');
-                  reasonArgs.invalid = nonMatching.map((f) => f.filename);
+                  // Only pass a keeper when there's exactly one valid file. With
+                  // two or more, 'duplicate' fires as well and "keep the one
+                  // called X" would be picking a winner we have no business
+                  // picking.
+                  reasonArgs.invalid = {
+                    names: nonMatching.map((f) => f.filename),
+                    keeper: matching.length === 1 ? matching[0].filename : null,
+                  };
                 }
                 if (matching.length > 1) {
                   applicable.push('duplicate');
